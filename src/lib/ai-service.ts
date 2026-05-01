@@ -78,6 +78,69 @@ export const PROVIDERS = {
       { id: "mistral-large-latest", name: "Mistral Large", tag: "powerful", tokens: 32000 },
     ],
   },
+  xai: {
+    name: "xAI (Grok)",
+    baseUrl: "https://api.x.ai/v1/chat/completions",
+    models: [
+      { id: "grok-3-mini", name: "Grok 3 Mini", tag: "fast", tokens: 131072 },
+      { id: "grok-3", name: "Grok 3", tag: "smart", tokens: 131072 },
+      { id: "grok-3-fast", name: "Grok 3 Fast", tag: "fast", tokens: 131072 },
+      { id: "grok-2-1212", name: "Grok 2", tag: "powerful", tokens: 131072 },
+    ],
+  },
+  together: {
+    name: "Together AI",
+    baseUrl: "https://api.together.xyz/v1/chat/completions",
+    models: [
+      { id: "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo", name: "Llama 3.1 8B Turbo", tag: "fast", tokens: 131072 },
+      { id: "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo", name: "Llama 3.1 70B Turbo", tag: "smart", tokens: 131072 },
+      { id: "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo", name: "Llama 3.1 405B", tag: "powerful", tokens: 131072 },
+      { id: "mistralai/Mixtral-8x7B-Instruct-v0.1", name: "Mixtral 8x7B", tag: "smart", tokens: 32768 },
+      { id: "Qwen/Qwen2.5-72B-Instruct-Turbo", name: "Qwen2.5 72B Turbo", tag: "smart", tokens: 32768 },
+    ],
+  },
+  openrouter: {
+    name: "OpenRouter",
+    baseUrl: "https://openrouter.ai/api/v1/chat/completions",
+    models: [
+      { id: "openai/gpt-4o-mini", name: "GPT-4o Mini (OR)", tag: "fast", tokens: 128000 },
+      { id: "anthropic/claude-3.5-haiku", name: "Claude 3.5 Haiku (OR)", tag: "fast", tokens: 200000 },
+      { id: "google/gemini-flash-1.5", name: "Gemini Flash 1.5 (OR)", tag: "fast", tokens: 1000000 },
+      { id: "meta-llama/llama-3.3-70b-instruct", name: "Llama 3.3 70B (OR)", tag: "smart", tokens: 131072 },
+      { id: "deepseek/deepseek-r1", name: "DeepSeek R1 (OR)", tag: "powerful", tokens: 163840 },
+      { id: "qwen/qwen-2.5-72b-instruct", name: "Qwen 2.5 72B (OR)", tag: "smart", tokens: 131072 },
+    ],
+  },
+  cerebras: {
+    name: "Cerebras",
+    baseUrl: "https://api.cerebras.ai/v1/chat/completions",
+    models: [
+      { id: "llama3.1-8b", name: "Llama 3.1 8B (Ultra Fast)", tag: "fast", tokens: 8192 },
+      { id: "llama3.1-70b", name: "Llama 3.1 70B (Fast)", tag: "smart", tokens: 8192 },
+      { id: "llama-4-scout-17b-16e-instruct", name: "Llama 4 Scout 17B", tag: "smart", tokens: 8192 },
+    ],
+  },
+  fireworks: {
+    name: "Fireworks AI",
+    baseUrl: "https://api.fireworks.ai/inference/v1/chat/completions",
+    models: [
+      { id: "accounts/fireworks/models/llama-v3p1-8b-instruct", name: "Llama 3.1 8B", tag: "fast", tokens: 131072 },
+      { id: "accounts/fireworks/models/llama-v3p1-70b-instruct", name: "Llama 3.1 70B", tag: "smart", tokens: 131072 },
+      { id: "accounts/fireworks/models/llama-v3p1-405b-instruct", name: "Llama 3.1 405B", tag: "powerful", tokens: 131072 },
+      { id: "accounts/fireworks/models/mixtral-8x22b-instruct", name: "Mixtral 8x22B", tag: "powerful", tokens: 65536 },
+      { id: "accounts/fireworks/models/qwen2p5-72b-instruct", name: "Qwen 2.5 72B", tag: "smart", tokens: 32768 },
+    ],
+  },
+  novita: {
+    name: "Novita AI",
+    baseUrl: "https://api.novita.ai/v3/openai/chat/completions",
+    models: [
+      { id: "meta-llama/llama-3.1-8b-instruct", name: "Llama 3.1 8B", tag: "fast", tokens: 131072 },
+      { id: "meta-llama/llama-3.1-70b-instruct", name: "Llama 3.1 70B", tag: "smart", tokens: 131072 },
+      { id: "deepseek/deepseek-v3", name: "DeepSeek V3", tag: "smart", tokens: 65536 },
+      { id: "qwen/qwen2.5-72b-instruct", name: "Qwen 2.5 72B", tag: "smart", tokens: 32768 },
+    ],
+  },
 };
 
 export const AUTO_FALLBACK_ORDER = [
@@ -301,7 +364,7 @@ async function callProvider({ provider, model, apiKey, messages, systemPrompt, m
   if (provider === "mistral") return callMistral({ apiKey, model, messages, systemPrompt, maxTokens });
   if (provider === "deepseek") return callDeepSeek({ apiKey, model, messages, systemPrompt, maxTokens });
 
-  // OpenAI-compatible (openai, groq)
+  // OpenAI-compatible (openai, groq, xai, together, openrouter, cerebras, fireworks, novita, etc.)
   return callOpenAICompatible({ url: config.baseUrl, apiKey, model, messages, systemPrompt, maxTokens });
 }
 
