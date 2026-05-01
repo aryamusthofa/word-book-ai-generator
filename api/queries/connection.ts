@@ -16,3 +16,5 @@ export function getDb() {
   }
   return instance;
 }
+
+export const db = getDb();
