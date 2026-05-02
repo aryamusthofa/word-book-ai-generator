@@ -368,6 +368,19 @@ async function callProvider({ provider, model, apiKey, messages, systemPrompt, m
   return callOpenAICompatible({ url: config.baseUrl, apiKey, model, messages, systemPrompt, maxTokens });
 }
 
+// apiKeys supports both legacy Record<string,string> and new multi-key Record<string, {key:string}[]>
+type ApiKeysInput = Record<string, string | string[] | Array<{key: string; id?: string; label?: string; addedAt?: number}>>;
+
+function resolveKeys(apiKeys: ApiKeysInput, provider: string): string[] {
+  const val = apiKeys[provider];
+  if (!val) return [];
+  if (typeof val === "string") return val ? [val] : [];
+  if (Array.isArray(val)) {
+    return (val as any[]).map((v) => (typeof v === "string" ? v : v.key)).filter(Boolean);
+  }
+  return [];
+}
+
 let _lastUsedModel: string | null = null;
 export function getLastUsedModel() {
   return _lastUsedModel;
@@ -384,46 +397,54 @@ export async function callAI({
   systemPrompt?: string;
   maxTokens?: number;
   selectedModel?: string;
-  apiKeys: Record<string, string>;
+  apiKeys: ApiKeysInput;
 }) {
   const isAuto = !selectedModel || selectedModel === "auto:auto";
+  if (isAuto) return callWithAutoFallback({ messages, systemPrompt, maxTokens, apiKeys });
 
-  if (isAuto) {
-    return callWithAutoFallback({ messages, systemPrompt, maxTokens, apiKeys });
+  const colonIdx = selectedModel.indexOf(":");
+  const provider = selectedModel.slice(0, colonIdx);
+  const model = selectedModel.slice(colonIdx + 1);
+  const keys = resolveKeys(apiKeys, provider);
+  if (keys.length === 0) throw new Error(t("noKey"));
+
+  const errors: string[] = [];
+  for (const key of keys) {
+    try {
+      _lastUsedModel = `${provider}:${model}`;
+      return await callProvider({ provider, model, apiKey: key, messages, systemPrompt, maxTokens });
+    } catch (err: any) {
+      if (classifyError(err.message) === "auth") { errors.push(err.message); continue; }
+      throw err;
+    }
   }
-
-  const [provider, model] = selectedModel.split(":");
-  const key = apiKeys[provider];
-  if (!key) throw new Error(t("noKey"));
-  _lastUsedModel = `${provider}:${model}`;
-  return callProvider({ provider, model, apiKey: key, messages, systemPrompt, maxTokens });
+  throw new Error(`All keys for ${provider} failed: ${errors.join("; ")}`);
 }
 
-async function callWithAutoFallback({ messages, systemPrompt, maxTokens, apiKeys }: any) {
+async function callWithAutoFallback({ messages, systemPrompt, maxTokens, apiKeys }: { messages: any[]; systemPrompt?: string; maxTokens?: number; apiKeys: ApiKeysInput }) {
   const errors: string[] = [];
-
   for (const { provider, model } of AUTO_FALLBACK_ORDER) {
-    const key = apiKeys[provider];
-    if (!key) continue;
-    try {
-      const result = await callProvider({ provider, model, apiKey: key, messages, systemPrompt, maxTokens });
-      _lastUsedModel = `${provider}:${model}`;
-      window.dispatchEvent(new CustomEvent("ai:modelUsed", { detail: { provider, model } }));
-      return result;
-    } catch (err: any) {
-      const errType = classifyError(err.message);
-      errors.push(`${provider}:${model} → [${errType}] ${err.message}`);
-      if (errType === "auth" || errType === "content") {
-        const label = errType === "auth" ? t("errors.authInvalid") : t("errors.contentPolicy");
-        throw new Error(`${label} for ${provider}. ${err.message}`);
+    const keys = resolveKeys(apiKeys, provider);
+    if (keys.length === 0) continue;
+    for (const key of keys) {
+      try {
+        const result = await callProvider({ provider, model, apiKey: key, messages, systemPrompt, maxTokens });
+        _lastUsedModel = `${provider}:${model}`;
+        if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("ai:modelUsed", { detail: { provider, model } }));
+        return result;
+      } catch (err: any) {
+        const errType = classifyError(err.message);
+        errors.push(`${provider}:${model} → [${errType}] ${err.message}`);
+        if (errType === "content") throw new Error(`${t("errors.contentPolicy")} for ${provider}. ${err.message}`);
+        if (errType === "auth") continue;
+        console.warn(`[Auto] Fallback from ${provider}:${model} [${errType}]`);
+        break;
       }
-      console.warn(`[Auto] Falling back from ${provider}:${model} [${errType}]:`, err.message);
     }
   }
   throw new Error(`${t("errors.allFailed")}:\n${errors.join("\n")}`);
 }
 
-// ---- Validation ----
 export async function validateApiKey(provider: string, apiKey: string) {
   try {
     const models = (PROVIDERS as any)[provider]?.models || [];

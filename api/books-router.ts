@@ -66,9 +66,12 @@ export const booksRouter = createRouter({
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
       
-      // If completing, increment user's book count
-      if (data.status === "completed") {
-        await db.execute("UPDATE users SET booksGenerated = booksGenerated + 1 WHERE id = " + ctx.user.id);
+      // If completing, increment user's book count (using safe Drizzle ORM)
+      if (data.status === "completed" || data.status === "interrupted") {
+        const [curUser] = await db.select({ cnt: users.booksGenerated }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
+        if (curUser) {
+          await db.update(users).set({ booksGenerated: (curUser.cnt || 0) + 1 }).where(eq(users.id, ctx.user.id));
+        }
       }
       
       await db.update(books).set({ ...data, updatedAt: new Date() })

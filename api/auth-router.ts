@@ -2,7 +2,7 @@ import { z } from "zod";
 import * as cookie from "cookie";
 import { Session } from "@contracts/constants";
 import { getSessionCookieOptions } from "./lib/cookies";
-import { createRouter, publicQuery, authedQuery } from "./middleware";
+import { createRouter, publicQuery, authedQuery, rateLimitedPublic } from "./middleware";
 import { db } from "./queries/connection";
 import { users } from "@db/schema";
 import { eq } from "drizzle-orm";
@@ -28,7 +28,7 @@ export const authRouter = createRouter({
   }),
 
   // Email registration
-  register: publicQuery
+  register: rateLimitedPublic
     .input(z.object({
       email: z.string().email(),
       password: z.string().min(6),
@@ -56,7 +56,7 @@ export const authRouter = createRouter({
     }),
 
   // Email login
-  login: publicQuery
+  login: rateLimitedPublic
     .input(z.object({
       email: z.string().email(),
       password: z.string(),
@@ -96,7 +96,7 @@ export const authRouter = createRouter({
     }),
 
   // Guest mode
-  createGuest: publicQuery.mutation(async ({ ctx }) => {
+  createGuest: rateLimitedPublic.mutation(async ({ ctx }) => {
     const guestId = `guest_${randomUUID()}`;
     const result = await db.insert(users).values({
       unionId: guestId,

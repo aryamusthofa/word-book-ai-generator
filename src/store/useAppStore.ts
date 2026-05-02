@@ -1,6 +1,28 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+export interface ApiKeyEntry {
+  id: string;        // nanoid
+  key: string;       // actual key (stored locally, never sent to cloud)
+  label: string;     // user-defined label e.g. "Key 1", "Main Key"
+  addedAt: number;   // timestamp
+}
+
+export interface GuestBook {
+  id: string;
+  topic: string;
+  lang: string;
+  pages: number;
+  structure: any[];
+  content: Record<string, string>;
+  wordCount: number;
+  pageCount: number;
+  status: "generating" | "completed" | "interrupted";
+  providerUsed?: string;
+  modelUsed?: string;
+  createdAt: number;
+}
+
 interface AppState {
   // Theme
   theme: "light" | "dark" | "system";
@@ -10,10 +32,13 @@ interface AppState {
   appLang: string;
   setAppLang: (lang: string) => void;
 
-  // API Keys (client-side storage for quick access)
-  apiKeys: Record<string, string>;
-  setApiKey: (provider: string, key: string) => void;
-  removeApiKey: (provider: string) => void;
+  // API Keys - multi-key per provider, stored ONLY locally
+  apiKeys: Record<string, ApiKeyEntry[]>;
+  addApiKey: (provider: string, key: string, label?: string) => string; // returns id
+  removeApiKey: (provider: string, id: string) => void;
+  updateApiKeyLabel: (provider: string, id: string, label: string) => void;
+  getFirstKey: (provider: string) => string | undefined;
+  getAllKeysFlat: () => Record<string, string>; // legacy compat
 
   // Selected Model
   selectedModel: string;
@@ -33,6 +58,14 @@ interface AppState {
   // Guest
   guestId: string | null;
   setGuestId: (id: string | null) => void;
+  guestBooksUsed: number;
+  incrementGuestBooks: () => void;
+
+  // Guest Books (local storage for guest users)
+  guestBooks: GuestBook[];
+  addGuestBook: (book: Omit<GuestBook, "id" | "createdAt">) => string; // returns id
+  updateGuestBook: (id: string, data: Partial<GuestBook>) => void;
+  deleteGuestBook: (id: string) => void;
 
   // Generation State
   isGenerating: boolean;
@@ -45,25 +78,67 @@ interface AppState {
   // UI
   sidebarOpen: boolean;
   setSidebarOpen: (val: boolean) => void;
+
+  // Cached user tier (refreshed on login)
+  cachedTier: "guest" | "free" | "premium" | null;
+  setCachedTier: (tier: "guest" | "free" | "premium" | null) => void;
 }
+
+const generateId = () => Math.random().toString(36).slice(2, 10);
 
 export const useAppStore = create<AppState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       theme: "system",
       setTheme: (theme) => set({ theme }),
 
       appLang: "en",
       setAppLang: (lang) => set({ appLang: lang }),
 
+      // Multi-key API keys
       apiKeys: {},
-      setApiKey: (provider, key) =>
-        set((state) => ({ apiKeys: { ...state.apiKeys, [provider]: key } })),
-      removeApiKey: (provider) =>
-        set((state) => {
-          const { [provider]: _, ...rest } = state.apiKeys;
-          return { apiKeys: rest };
-        }),
+      addApiKey: (provider, key, label) => {
+        const id = generateId();
+        const existing = get().apiKeys[provider] || [];
+        const keyLabel = label || `Key ${existing.length + 1}`;
+        set((state) => ({
+          apiKeys: {
+            ...state.apiKeys,
+            [provider]: [...(state.apiKeys[provider] || []), { id, key, label: keyLabel, addedAt: Date.now() }],
+          },
+        }));
+        return id;
+      },
+      removeApiKey: (provider, id) =>
+        set((state) => ({
+          apiKeys: {
+            ...state.apiKeys,
+            [provider]: (state.apiKeys[provider] || []).filter((e) => e.id !== id),
+          },
+        })),
+      updateApiKeyLabel: (provider, id, label) =>
+        set((state) => ({
+          apiKeys: {
+            ...state.apiKeys,
+            [provider]: (state.apiKeys[provider] || []).map((e) =>
+              e.id === id ? { ...e, label } : e
+            ),
+          },
+        })),
+      getFirstKey: (provider) => {
+        const keys = get().apiKeys[provider];
+        return keys && keys.length > 0 ? keys[0].key : undefined;
+      },
+      getAllKeysFlat: () => {
+        const result: Record<string, string> = {};
+        const allKeys = get().apiKeys;
+        for (const [provider, entries] of Object.entries(allKeys)) {
+          if (entries.length > 0) {
+            result[provider] = entries[0].key;
+          }
+        }
+        return result;
+      },
 
       selectedModel: "auto:auto",
       setSelectedModel: (model) => set({ selectedModel: model }),
@@ -81,6 +156,26 @@ export const useAppStore = create<AppState>()(
 
       guestId: null,
       setGuestId: (id) => set({ guestId: id }),
+      guestBooksUsed: 0,
+      incrementGuestBooks: () => set((s) => ({ guestBooksUsed: s.guestBooksUsed + 1 })),
+
+      guestBooks: [],
+      addGuestBook: (book) => {
+        const id = generateId();
+        set((s) => ({
+          guestBooks: [
+            ...s.guestBooks,
+            { ...book, id, createdAt: Date.now() },
+          ],
+        }));
+        return id;
+      },
+      updateGuestBook: (id, data) =>
+        set((s) => ({
+          guestBooks: s.guestBooks.map((b) => (b.id === id ? { ...b, ...data } : b)),
+        })),
+      deleteGuestBook: (id) =>
+        set((s) => ({ guestBooks: s.guestBooks.filter((b) => b.id !== id) })),
 
       isGenerating: false,
       generationProgress: 0,
@@ -91,9 +186,12 @@ export const useAppStore = create<AppState>()(
 
       sidebarOpen: false,
       setSidebarOpen: (val) => set({ sidebarOpen: val }),
+
+      cachedTier: null,
+      setCachedTier: (tier) => set({ cachedTier: tier }),
     }),
     {
-      name: "wordai-storage",
+      name: "wordai-storage-v2",
       partialize: (state) => ({
         theme: state.theme,
         appLang: state.appLang,
@@ -101,6 +199,9 @@ export const useAppStore = create<AppState>()(
         selectedModel: state.selectedModel,
         settings: state.settings,
         guestId: state.guestId,
+        guestBooksUsed: state.guestBooksUsed,
+        guestBooks: state.guestBooks,
+        cachedTier: state.cachedTier,
       }),
     }
   )

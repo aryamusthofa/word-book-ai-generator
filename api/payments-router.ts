@@ -11,17 +11,20 @@ export const paymentsRouter = createRouter({
     .input(z.object({
       amount: z.number(),
       currency: z.string().default("IDR"),
-      method: z.enum(["google_pay", "credit_card", "e_wallet", "qris"]),
+      method: z.enum(["google_pay", "credit_card", "e_wallet", "qris", "e_wallet_dana", "e_wallet_ovo", "e_wallet_gopay", "e_wallet_shopeepay", "dana", "ovo", "gopay"]),
       provider: z.string().optional(), // "dana", "ovo", "gopay", etc
     }))
     .mutation(async ({ ctx, input }) => {
+      // Normalize e-wallet sub-types
+      const normalizedMethod = input.method.startsWith("e_wallet") ? "e_wallet" : input.method;
+      const walletProvider = input.method.startsWith("e_wallet_") ? input.method.replace("e_wallet_", "") : input.provider;
       const externalId = `pay_${randomUUID()}`;
       const result = await db.insert(payments).values({
         userId: ctx.user.id,
         amount: input.amount,
         currency: input.currency,
-        method: input.method,
-        provider: input.provider || input.method,
+        method: normalizedMethod as any,
+        provider: walletProvider || normalizedMethod,
         status: "pending",
         externalId,
         metadata: { ...input },
